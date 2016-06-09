@@ -24,8 +24,8 @@ import data_loader
 
 psutil_preset = []
 
-cpu_filter = [['system', 'user'], ['irq', 'softirq'], 'idle', 'iowait', 'nice']
-mem_filter = [['total', 'available', 'free', 'used'], 'percent']
+cpu_filter = [['#stack','system', 'user'], ['irq', 'softirq'], 'idle', 'iowait', 'nice']
+mem_filter = [['#stack','total', 'available', 'free', 'used'], 'percent']
 swap_filter = [['total', 'used', 'free'], ['sin', 'sout'], 'percent']
 disk_filter = [['read_bytes', 'write_bytes'], ['read_count', 'write_count'], ['read_time', 'write_time']]
 net_filter = [['bytes_recv', 'bytes_sent'], ['packets_recv', 'packets_sent'], ['dropin', 'dropout'], ['errin', 'errout']]

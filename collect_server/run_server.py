@@ -41,7 +41,6 @@ def server():
 
 while True:
 	port = common.settings.collect_server_port
-
 	print('>>> server %d(%d) fork' % (port, os.getpid()))
 	pid = os.fork()
 

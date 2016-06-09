@@ -24,7 +24,7 @@
 import os, sys, socket
 
 
-collect_server_port = 30000
+collect_server_port = 30005
 
 # should be sorted by addr
 #  add listener if you want

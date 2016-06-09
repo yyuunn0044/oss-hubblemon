@@ -42,8 +42,6 @@ class CollectListener:
 
 	def listen(self, count = -1):
 		print('# CollectListener listen (%s)' % (self.port))
-		#print(socket.gethostname())
-		#print(self.port)
 		
 		self.sock.bind((socket.gethostname(), self.port))
 		self.sock.listen(5)

@@ -33,7 +33,7 @@ hostname = socket.gethostname()
 
 
 #server_address = ['1.1.1.1:40000', '2.2.2.2:40000'] # your collect server address
-server_address = ['%s:30000' % hostname] # your collect server address
+server_address = ['%s:30005' % hostname] # your collect server address
 
 
 if True:
@@ -56,7 +56,7 @@ c.plugins.append(mc)
 
 # mysql stat example
 my = mysql_stat()
-my.push_db('dbname', 'mysql.sock_path', 'id', 'pw')
+my.push_db('hubblemon', '/var/run/mysqld/mysqld.sock', 'root', '')
 c.plugins.append(my)
 
 # cubrid stat example
