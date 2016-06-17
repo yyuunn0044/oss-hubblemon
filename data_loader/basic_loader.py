@@ -19,9 +19,8 @@
 
 import os
 from chart.chart_data import chart_data
-from chart.chart_data import chart_item
 import common.settings
-
+import re
               
 class basic_loader:
 	def __init__(self, handle, filter, title=''):
@@ -37,10 +36,13 @@ class basic_loader:
 
 		self.renderer = {}
 		flot_line = flot_line_renderer()
+		flot_pie = flot_pie_renderer()
+		flot_bar = flot_bar_renderer()
 		self.renderer['default'] = flot_line
 		self.renderer['line'] = flot_line
 		self.renderer['title'] = title_renderer()
-		self.renderer['stack'] = flot_stack_renderer()
+		self.renderer['pie'] = flot_pie
+		self.renderer['bar'] = flot_bar
 
 	def count(self, name):
 		if self.handle is None:
@@ -137,7 +139,7 @@ class basic_loader:
 			ts_count = 0
 			for item in items:
 				if ts_start is None:
-					ts = item[0]
+					ts = item[0] * 1000
 				else:
 					ts = ts_start + ts_count * ts_step
 					ts_count += 1
@@ -163,7 +165,7 @@ class basic_loader:
 
 			for item in items:
 				if ts_start is None:
-					ts = item[0]
+					ts = item[0] * 1000
 				else:
 					ts = ts_start + ts_count * ts_step
 					ts_count += 1
@@ -214,9 +216,11 @@ class basic_loader:
 			return []
 
 		ret = self.handle.read(ts_start, ts_end)
+		#print ('result: ', ret)
 		# default(rrd) type ((ts_start, ts_end, step), (metric1, metric2, metric3), [(0, 0, 0), (1, 1, 1)....])
 		# rrd type ('#rrd', (ts_start, ts_end, step), (metric1, metric2, metric3), [(0, 0, 0), (1, 1, 1)....])
 		# tsdb type ('#timestamp', (metric1, metric2, metric3), [(ts, 0, 0, 0), (ts, 1, 1, 1)....])
+
 		tmap = {}
 
 		if isinstance(ret[0], str):
@@ -253,14 +257,12 @@ class basic_loader:
 			
 		# loader title
 		chart_data_list = []
-		
 		if self.title != '':
 			title_chart = chart_data()
 			title_chart.title = self.title
 			title_chart.renderer = self.renderer['title']
 			chart_data_list.append(title_chart)
 
-		
 		if self.filter == None: 	# select all
 			self.filter = names
 
@@ -269,42 +271,30 @@ class basic_loader:
 			new_chart = chart_data()
 
 			tmp_list = self.make_chart(titles, tmap, items, ts_start, ts_step)
-			for tmp in tmp_list:
+		
+#######################		
+			for t in range(len(tmp_list)):
+				tmp = tmp_list[t]
+				if (tmp[0] == 'user'):
+					tmp2=[]
+					for i in range(len(tmp[1])):
+						if tmp[1][i] == None:
+							tmp2.append(tmp[1][i])
+						else:
+							tmp4 = tmp_list[t-1]
+							tmp2.append([tmp[1][i][0], (tmp[1][i][1] + tmp4[1][i][1])])
+					new_chart.push_data('stack', tmp2)
 				new_chart.push_data(tmp[0], tmp[1])
-				
-#			if(titles[0]=='#stack'):
-			
-#				stack_data = tmp_list[0][1]
-#				for tmp in tmp_list[1:]:					
-#					for z in range(len(stack_data)):
-#						if z > len(tmp[1])-1:
-#							break
-#						if stack_data[z]!=None and tmp[1][z]!=None:
-#							if (stack_data[z][0] == tmp[1][z][0]):
-#								stack_data[z][1] += tmp[1][z][1]
-#						else:
-#							print("stack x-axis not good----------------")
-#							continue
-#				print('len////////////')
-#				print(len(stack_data))
-#				for i in range(len(stack_data)):
-#					if stack_data[i]!=None:
-#						print('from %d' %i)
-#						break
-#				for j in range(i, len(stack_data)):
-#					if stack_data[j]==None:
-#						print('to %d' %j)
-#						break
-				
-#				new_chart.push_data('stack', stack_data)	
+###############33333
 			renderer_name = 'default'
 			if isinstance(titles, list) and titles[0].startswith('#'): # renderer
 				renderer_name = titles[0][1:]
-				
+
 			if renderer_name in self.renderer:
 				new_chart.renderer = self.renderer[renderer_name]
 
-			chart_data_list.append(new_chart)	
+			chart_data_list.append(new_chart) 
+
 		return chart_data_list
 
 
@@ -323,6 +313,82 @@ class title_renderer:
 		return title_template
 
 
+class flot_pie_renderer:
+	idx = 1
+
+	def render(self, chart_data):
+		chart_data.sampling(common.settings.chart_resolution)
+
+		# adjust timezone if needed
+		mode = 'series: {pie: {show: true, radius:1, label: {show:true, radius:2/3, formatter:labelFormatter, threshold:0.1}}}, legend: {show:false}'
+		if chart_data.mode == 'time':
+			chart_data.adjust_timezone()
+
+		# convert python array to js array
+		raw_data = ''
+		if len(chart_data.items) == 1: # one item
+			item = chart_data.items[-1]
+			last_data = list(filter(None.__ne__, item.data))[-1][1]
+			raw_data = '{ label: "%s", data: %s }'% (item.title , last_data)
+		else: # multi item (display label)
+			for item in chart_data.items:
+				tmp = list(filter(None.__ne__, item.data))
+				if len(chart_data.items) > 7:
+					if (item.title != "total"):
+						raw_data += '{ label: "%s", data: %s },' % (item.title, tmp[-1][1])
+				else:
+					if (item.title != "total"):
+						raw_data += '{ label: "%s", data: %s },' % (item.title, tmp[-1][1])
+
+		idx = flot_line_renderer.idx + id(chart_data) # to get unique idx
+		flot_line_renderer.idx += 1
+
+		js_template = self.get_js_template()
+		return  js_template % ('[ %s ]' % raw_data, idx, mode, chart_data.title, idx)
+
+		
+	def get_js_template(self):
+		js_template = '''
+			<script type="text/javascript">
+			// A custom label formatter used by several of the plots
+
+			function labelFormatter(label, series) {
+				return "<div style='font-size:8pt; text-align:center; padding:2px; color:white;'>" + label + "<br/>" + Math.round(series.percent) + "%%</div>";
+			}
+
+			$(function(){
+				tickFunc = function(val, axis) {
+					if (val > 1000000000 && (val %% 1000000000) == 0) {
+						return val/1000000000 + "G";
+					}
+					else if (val > 1000000 && (val %% 1000000) == 0) {
+						return val/1000000 + "M";
+					}
+					else if (val < 1) {
+						return Math.round(val*1000)/1000
+					}
+
+					return val;
+				};
+
+				var data_list = %s;
+
+				$.plot($("#placeholder_%s"), data_list, {
+					%s		
+				});
+			});
+			</script>
+
+			<div>
+			<div class="chart-container">
+				<div class="chart-title">%s</div>
+				<div id="placeholder_%s" class="chart-placeholder" style="float:left" align="center">
+				</div>
+			</div>
+			</div>
+		'''
+		return js_template
+
 
 class flot_line_renderer:
 	idx = 1
@@ -336,13 +402,18 @@ class flot_line_renderer:
 			mode = 'xaxis: { mode: "time" }, yaxis: { tickFormatter: tickFunc, min: 0 }, lines: { fillOpacity:1.0, show: true, lineWidth:1 },'
 			chart_data.adjust_timezone()
 
+		mode = mode + "cursors: [ { mode: 'x', showIntersections: true, showLabel: false,snapToPlot: 0, symbol: 'diamond', position: { relativeX: 0, relativeY:0} }], grid: {hoverable: true, autoHighlight: false },"
 		# convert python array to js array
 		raw_data = ''
 		if len(chart_data.items) == 1: # one item
-			raw_data = chart_data.items[0].data.__repr__().replace('None', 'null')
+			item = chart_data.items[0];
+			tmp = list(filter(None.__ne__, item.data))
+			tmp = tmp.__repr__()
+			raw_data = '{ label: "%s", data: %s}' %(item.title, tmp)
 		else: # multi item (display label)
 			for item in chart_data.items:
-				tmp = item.data.__repr__().replace('None', 'null')
+				tmp = list(filter(None.__ne__, item.data))
+				tmp = tmp.__repr__()
 				if len(chart_data.items) > 7:
 					raw_data += '%s,' % tmp
 				else:
@@ -353,13 +424,13 @@ class flot_line_renderer:
 
 		#print (raw_data)
 		js_template = self.get_js_template()
-		return  js_template % ('[ %s ]' % raw_data, idx, mode, chart_data.title, idx)
+		return  js_template % ('%s' %idx, raw_data,idx, idx, mode,idx,idx,idx,idx,idx, idx,idx,chart_data.title, idx,idx,idx, chart_data.title, idx)
 
 		
 	def get_js_template(self):
 		js_template = '''
 			<script type="text/javascript">
-
+			var plot_%s;	
 			$(function() {
 				tickFunc = function(val, axis) {
 					if (val > 1000000000 && (val %% 1000000000) == 0) {
@@ -375,16 +446,61 @@ class flot_line_renderer:
 					return val;
 				};
 
-				var data_list = %s
-				$.plot("#placeholder_%s", data_list, {
+				var data_list = [%s];
+				plot_%s = $.plot("#placeholder_%s", data_list, {
 					%s
 				});
 			});
 			</script>
 
+			<script>
+			$(function(){
+			var legends = $("#placeholder_%s .legendLabel");
+			    legends.each(function () {
+				// fix the widths so they don't jump around
+				$(this).css('width', $(this).width());
+			    });
+
+			    var updateLegendTimeout = null;
+			    var latestPosition = null;
+			    
+			    function updateLegend_%s() {
+				updateLegendTimeout = null;
+				
+				var pos = latestPosition;
+				var axes = plot_%s.getAxes();
+				if (pos.x < axes.xaxis.min || pos.x > axes.xaxis.max ||
+				    pos.y < axes.yaxis.min || pos.y > axes.yaxis.max)
+			    		return;
+
+				var i, j, dataset = plot_%s.getData();
+				for (i = 0; i < dataset.length; ++i) {
+				    var series = dataset[i];
+				    // find the nearest points, x-wise
+				    for (j = 0; j < series.data.length; ++j)
+					if (series.data[j][0] > pos.x)
+					    break;
+				    plot_%s.setCursor(plot_%s.getCursors()[0], {position:{x:series.data[j-1][0]}}); 
+				    var t = parseFloat(series.data[j-1][0]);
+				    var date = new Date(t);// Milliseconds to date
+				    date.setTime(t + date.getTimezoneOffset()*60*1000); // timezone offset 	
+				    var formatted = date.toTimeString().replace(/.*(\d{2}:\d{2}:\d{2}).*/, "$1"); // change time format as HH:MM:SS
+				    $("#chart-title-%s").text("%s x = "+formatted);
+				}
+			    }	
+			var placeholder = $("#placeholder_%s");
+			placeholder.bind("plothover",  function (event, pos, item) {
+				latestPosition = pos;
+				if (!updateLegendTimeout)
+				    updateLegendTimeout = setTimeout(updateLegend_%s, 50);
+			    });
+			});
+
+</script>
+
 			<div>
 			<div class="chart-container">
-				<div class="chart-title">%s</div>
+				<div id="chart-title-%s" class="chart-title">%s x = 0.00 </div>
 				<div id="placeholder_%s" class="chart-placeholder" style="float:left"></div>
 			</div>
 			</div>
@@ -393,64 +509,70 @@ class flot_line_renderer:
 		return js_template
 
 
-class flot_stack_renderer:
+class flot_bar_renderer:
 	idx = 1
-	tmp_stack=[]
+
 	def render(self, chart_data):
 		chart_data.sampling(common.settings.chart_resolution)
 
 		# adjust timezone if needed
 		mode = ''
 		if chart_data.mode == 'time':
-			mode = 'xaxis: { mode: "time" }, yaxis: { tickFormatter: tickFunc, min: 0 }, lines: { fillOpacity:1.0, show: true, lineWidth:1 },'
+			# add click event listener to label
+			labelFormatter = '''
+                               function(label, series){
+					var idx = %s;
+					var labelList = %s;
+                                        return "<a name=" + "'" + idx + " " + label + " " + labelList + "'" + " onclick='(function(elem){\
+									var data = elem.name.split(/ /);\
+									var id = data[0];\
+									var label = data[1];\
+									var labelList = data[2].split(/,/);\
+                                                                        var bars = dic_plot[id].getData()[labelList.indexOf(label)].bars;\
+									bars.show ? bars.show=false : bars.show=true;\
+                                                                        dic_plot[id].draw();\
+                                                                })(this)'>" + label + "</a>";
+                                }
+                        '''
+
+			#set bar width
+
+			#push num1(time in millisecond) which matches '[num1, num2]'
+			tmp_data = re.findall('\d+(?=, \d+)', chart_data.items[0].data.__repr__())
+			if len(tmp_data) >= 2:
+				start_time = int(tmp_data[0])
+				end_time = int(tmp_data[-1])
+				time_gap = end_time - start_time
+				#unit of barWidth = unit of x axis(1 millisecond)
+				barWidth = time_gap / len(chart_data.items[0].data) * 0.8
+			else:
+				barWidth = 1
+
+			mode = 'xaxis: { mode: "time" }, yaxis: { tickFormatter: tickFunc, min: 0 }, bars: { fill: 0.8, show: true, lineWidth: 0, barWidth: %d, fillColors: false}, legend: { labelFormatter: %s }, ' %(barWidth, labelFormatter)
+
+
 			chart_data.adjust_timezone()
 
-		for y in range(len(chart_data.items)):
-			if y==0:			
-				tmp_stack=chart_data.items[0].data
-			else:
-				for z in range(len(tmp_stack)):
-					if z > len(chart_data.items[y].data)-1:
-						break
-					if tmp_stack[z]!=None and chart_data.items[y].data[z]!=None: 
-						if (tmp_stack[z][0] == chart_data.items[y].data[z][0]):
-							tmp_stack[z][1]+=chart_data.items[y].data[z][1]
-					else:
-						print("stack x-axis not good----------------")
-						continue
-		
-			
-		item_stack=chart_item('stack', tmp_stack)
-		chart_data.items.append(item_stack)
-		
 		# convert python array to js array
 		raw_data = ''
-	
+		labelList = [] # list of all label
 		if len(chart_data.items) == 1: # one item
 			raw_data = chart_data.items[0].data.__repr__().replace('None', 'null')
 		else: # multi item (display label)
-
 			for item in chart_data.items:
 				tmp = item.data.__repr__().replace('None', 'null')
-				print(item.title)	
 				if len(chart_data.items) > 7:
 					raw_data += '%s,' % tmp
-				else:					
-					raw_data += '{ label: "%s", data: %s },' % (item.title, tmp)
-	
-		 	
-	#	tmp = tmp_stack.__repr__().replace('None', 'null')
-	#	raw_data += '{ label: "stack", data: %s },' %(tmp)
-	#
-		idx = flot_stack_renderer.idx + id(chart_data) # to get unique idx
-		flot_stack_renderer.idx += 1
+				else:
+					labelList.append(item.title)
+					raw_data += '{ label: "%s", data: %s, },' % (item.title, tmp)
+
+		idx = flot_bar_renderer.idx + id(chart_data) # to get unique idx
+		flot_bar_renderer.idx += 1
 
 		#print (raw_data)
 		js_template = self.get_js_template()
-		print(idx)
-		print(mode)
-		print(chart_data.title)
-		return  js_template % ('[ %s ]' % raw_data, idx, mode, chart_data.title, idx)
+		return  js_template % ('[ %s ]' % raw_data, idx, mode %(idx, labelList), idx, chart_data.title, idx)
 
 		
 	def get_js_template(self):
@@ -472,10 +594,15 @@ class flot_stack_renderer:
 					return val;
 				};
 
-				var data_list = %s
-				$.plot("#placeholder_%s", data_list, {
+				var data_list = %s;
+
+				var plot = $.plot("#placeholder_%s", data_list, {
 					%s
 				});
+
+				if (typeof(dic_plot) == "undefined")	
+					dic_plot = Object();
+				dic_plot["%s"] = plot;
 			});
 			</script>
 
@@ -488,7 +615,3 @@ class flot_stack_renderer:
 		'''
 
 		return js_template
-
-
-
-

@@ -21,7 +21,6 @@
 import os, sys, time
 
 import collect_listener
-import server_rrd_plugin
 
 
 hubblemon_path = os.path.join(os.path.dirname(__file__), '..')
